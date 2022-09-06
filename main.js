@@ -4,8 +4,9 @@ const AdmZip = require('adm-zip')
 const filesize = require('filesize')
 const pathname = require('path')
 const fs = require('fs')
+const { exec } = require('child_process')
 
-async function main() {
+async function download_artifacts(target_branch_for_merge_base) {
     try {
         const token = core.getInput("github_token", { required: true })
         const [owner, repo] = core.getInput("repo", { required: true }).split("/")
@@ -59,32 +60,48 @@ async function main() {
             }
         })
 
-        if (pr) {
-            core.info(`==> PR: ${pr}`)
-            const pull = await client.rest.pulls.get({
-                owner: owner,
-                repo: repo,
-                pull_number: pr,
-            })
-            commit = pull.data.head.sha
-            //branch = pull.data.head.ref
-        }
-
-        if (commit) {
-            core.info(`==> Commit: ${commit}`)
-        }
-
         if (branch) {
             branch = branch.replace(/^refs\/heads\//, "")
             core.info(`==> Branch: ${branch}`)
         }
 
-        if (event) {
-            core.info(`==> Event: ${event}`)
-        }
+        if (!target_branch_for_merge_base) {
+            if (pr) {
+                core.info(`==> PR: ${pr}`)
+                const pull = await client.rest.pulls.get({
+                    owner: owner,
+                    repo: repo,
+                    pull_number: pr,
+                })
+                commit = pull.data.head.sha
+                //branch = pull.data.head.ref
+            }
 
-        if (runNumber) {
-            core.info(`==> Run number: ${runNumber}`)
+            if (commit) {
+                core.info(`==> Commit: ${commit}`)
+            }
+
+            if (event) {
+                core.info(`==> Event: ${event}`)
+            }
+
+            if (runNumber) {
+                core.info(`==> Run number: ${runNumber}`)
+            }
+        } else {
+            commit = await new Promise((resolve, reject) => {
+                exec(`git merge-base ${branch} origin/${target_branch_for_merge_base}`,
+                     (error, stdout, stderr) => {
+                    if (error) {
+                        reject(error);
+                        return;
+                    }
+
+                    resolve(stdout.trim());
+                });
+            });
+            core.info(`==> trying merge base commit: ${commit}`);
+            branch = undefined;
         }
 
         if (!runID) {
@@ -247,6 +264,19 @@ async function main() {
                 core.info(message)
                 break
         }
+    }
+}
+
+async function main() {
+    await download_artifacts();
+    if (process.exitCode != core.ExitCode.Failure) {
+        return;
+    }
+
+    let target_branch_for_merge_base = core.getInput("target_branch_for_merge_base");
+    if (target_branch_for_merge_base) {
+        process.exitCode = core.ExitCode.Success;
+        await download_artifacts(target_branch_for_merge_base);
     }
 }
 

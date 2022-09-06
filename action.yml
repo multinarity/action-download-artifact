@@ -70,6 +70,9 @@ inputs:
       
       fail, warn or ignore
     default: fail
+  target_branch_for_merge_base:
+    required: false
+    default:
 outputs:
   error_message:
     description: The error message, if an error occurs
